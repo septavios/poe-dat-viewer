@@ -18,6 +18,7 @@ export interface CanvasPalette {
   background: string
   text: string
   selectedRow: string
+  hoveredRow: string
   selectedColumn: string
   columnBorder: string
   shadowTop: [string, string]
@@ -34,6 +35,7 @@ export const canvasPalettes: Record<'light' | 'dark', CanvasPalette> = {
     background: '#ffffff',
     text: '#1f2933',
     selectedRow: 'rgba(148, 197, 255, 0.55)',
+    hoveredRow: 'rgba(148, 197, 255, 0.25)',
     selectedColumn: 'rgba(148, 197, 255, 0.55)',
     columnBorder: '#cbd5e1',
     shadowTop: ['rgba(248, 250, 252, 0.7)', 'rgba(248, 250, 252, 0)'],
@@ -48,6 +50,7 @@ export const canvasPalettes: Record<'light' | 'dark', CanvasPalette> = {
     background: '#161b22',
     text: '#f3f4f6',
     selectedRow: 'rgba(96, 165, 250, 0.35)',
+    hoveredRow: 'rgba(96, 165, 250, 0.15)',
     selectedColumn: 'rgba(96, 165, 250, 0.35)',
     columnBorder: '#2d3645',
     shadowTop: ['rgba(22, 27, 34, 0.7)', 'rgba(22, 27, 34, 0)'],
@@ -65,20 +68,20 @@ export const canvasPalettes: Record<'light' | 'dark', CanvasPalette> = {
 // console.log(getBaseLine(19), 'CR: 14  |  FF: 14')
 // console.log(getBaseLine(20), 'CR: 14  |  FF: 15')
 
-export function rowNumLength (rowCount: number) {
+export function rowNumLength(rowCount: number) {
   const maxLen = String(rowCount - 1).length
   return Math.max(maxLen, ROWNUM_MIN_LENGTH)
 }
 
-export function rowsNumWidth (rowCount: number) {
+export function rowsNumWidth(rowCount: number) {
   return Math.ceil(rowNumLength(rowCount) * CHAR_WIDTH)
 }
 
-export function rowsOverlayWidth (rowCount: number) {
+export function rowsOverlayWidth(rowCount: number) {
   return rowsNumWidth(rowCount) + (8 * 2)
 }
 
-function getMonoFontWidth (fontSize: number, fontFamily: string): number {
+function getMonoFontWidth(fontSize: number, fontFamily: string): number {
   const canvasEl = document.createElement('canvas')
   const context = canvasEl.getContext('2d')!
   context.font = `${fontSize}px ${fontFamily}`
@@ -86,7 +89,7 @@ function getMonoFontWidth (fontSize: number, fontFamily: string): number {
   return metrics.width
 }
 
-function getFontBaseLine (fontSize: number, fontFamily: string): number {
+function getFontBaseLine(fontSize: number, fontFamily: string): number {
   const canvasEl = document.createElement('canvas')
   const context = canvasEl.getContext('2d')!
   context.font = `${fontSize}px ${fontFamily}`
@@ -100,11 +103,11 @@ function getFontBaseLine (fontSize: number, fontFamily: string): number {
   return xBase
 }
 
-export function getBaseLine (lineHeight: number): number {
+export function getBaseLine(lineHeight: number): number {
   return /* Math.round */ (1 + (lineHeight - FONT_SIZE) / 2 + XBASE_HEIGHT)
 }
 
-export function drawRows (params: {
+export function drawRows(params: {
   left: number
   paintWidth: number
   top: number
@@ -126,6 +129,18 @@ export function drawRows (params: {
       ctx.fillStyle = palette.selectedRow
       ctx.fillRect(
         0, params.top + (selectedIdx * LINE_HEIGHT),
+        ctx.canvas.width, LINE_HEIGHT
+      )
+    }
+  }
+
+  // draw hovered row
+  if (params.viewer.hoveredRow.value !== null) {
+    const hoveredIdx = params.rows.indexOf(params.viewer.hoveredRow.value)
+    if (hoveredIdx !== -1 && params.viewer.hoveredRow.value !== params.viewer.selectedRow.value) {
+      ctx.fillStyle = palette.hoveredRow
+      ctx.fillRect(
+        0, params.top + (hoveredIdx * LINE_HEIGHT),
         ctx.canvas.width, LINE_HEIGHT
       )
     }
@@ -170,7 +185,7 @@ export function drawRows (params: {
   }
 }
 
-function drawColumns (ctx: CanvasRenderingContext2D, columns: readonly RenderByte[], palette: CanvasPalette) {
+function drawColumns(ctx: CanvasRenderingContext2D, columns: readonly RenderByte[], palette: CanvasPalette) {
   for (const col of columns) {
     if (col.selected) {
       ctx.fillStyle = palette.selectedColumn
@@ -196,7 +211,7 @@ interface ColumnContentRenderer {
   exec: DrawColumnContentFn
 }
 
-export function getColumnRenderers (viewer: Viewer, paintBegin: number, paintEnd: number): ColumnContentRenderer[] {
+export function getColumnRenderers(viewer: Viewer, paintBegin: number, paintEnd: number): ColumnContentRenderer[] {
   const headers = viewer.headers.value
   const stats = viewer.columnStats.value
   const datFile = viewer.datFile
@@ -231,22 +246,22 @@ export function getColumnRenderers (viewer: Viewer, paintBegin: number, paintEnd
         res.push({
           left: left + (sizes.borderWidth ? BORDER_WIDTH : 0),
           width: sizes.paddingWidth,
-            exec: (ctx: CanvasRenderingContext2D, rows: number[], palette: CanvasPalette) => {
-              if (header.type.key?.table && header.type.key.viewColumn) {
-                const referenced = viewer.referencedTables.value.get(header.type.key.table)!.value
-                if (referenced) {
-                  const referencedHeader = referenced.headers.find(h => h.name === header.type.key!.viewColumn)
-                  if (referencedHeader) {
-                    renderCellContent(ctx, header, datFile, rows, palette, { header: referencedHeader, datFile: referenced.datFile })
-                    return
-                  }
+          exec: (ctx: CanvasRenderingContext2D, rows: number[], palette: CanvasPalette) => {
+            if (header.type.key?.table && header.type.key.viewColumn) {
+              const referenced = viewer.referencedTables.value.get(header.type.key.table)!.value
+              if (referenced) {
+                const referencedHeader = referenced.headers.find(h => h.name === header.type.key!.viewColumn)
+                if (referencedHeader) {
+                  renderCellContent(ctx, header, datFile, rows, palette, { header: referencedHeader, datFile: referenced.datFile })
+                  return
                 }
               }
-              renderCellContent(ctx, header, datFile, rows, palette)
             }
-          })
-        }
+            renderCellContent(ctx, header, datFile, rows, palette)
+          }
+        })
       }
+    }
 
     left += sizes.borderWidth
     if (left >= paintEnd) return res
@@ -255,7 +270,7 @@ export function getColumnRenderers (viewer: Viewer, paintBegin: number, paintEnd
   return res
 }
 
-export function columnSizes (header: Readonly<Header>) {
+export function columnSizes(header: Readonly<Header>) {
   const textLength = (header.type.byteView && !header.type.byteView.array)
     ? header.length * 3 - 1
     : header.textLength!
@@ -266,7 +281,7 @@ export function columnSizes (header: Readonly<Header>) {
   }
 }
 
-export function getRowWidth (headers: readonly Header[]): number {
+export function getRowWidth(headers: readonly Header[]): number {
   let size = 0
   for (const header of headers) {
     const sizes = columnSizes(header)

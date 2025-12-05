@@ -1,32 +1,42 @@
 <template>
-  <index-tree />
-  <div class="layout-column flex-1 min-w-0">
-    <viewer-tabs />
-    <div class="layout-column flex-1 min-h-0">
-      <component
-        v-if="activeTab"
-        :is="activeTab.type"
-        :args="activeTab.args"
-        :key="activeTab.id"
-        :ka-scope="activeTab.kaScope"
-        v-model:ka-state="activeTab.kaState" />
-      <div v-else
-        class="flex-1 text-lg flex items-center justify-center empty-state"
-        >The viewer is ready to fulfill your wishes 👾</div>
-    </div>
-    <div class="app-footer">
-      <div>Made by Alexander Drozdov, {{ appVersion.slice(0, 7) }} · <a class="q-link text-white border-b" href="https://github.com/SnosMe/poe-dat-viewer">GitHub</a></div>
-      <a href="https://discord.gg/SJjBdT3" class="flex ml-8"><img src="@/assets/discord-badge.svg" /></a>
-    </div>
+  <div v-if="standaloneTable" class="h-screen w-screen bg-white dark:bg-gray-900">
+    <schema-diagram :table-name="standaloneTable" :db="schemaDb" :is-standalone="true" />
   </div>
-  <download-progress />
+  <div v-else-if="standaloneVueFlowTable" class="h-screen w-screen bg-white dark:bg-gray-900">
+    <vue-flow-diagram :table-name="standaloneVueFlowTable" :db="schemaDb" :is-standalone="true" />
+  </div>
+  <template v-else>
+    <index-tree />
+    <div class="layout-column flex-1 min-w-0">
+      <viewer-tabs />
+      <div class="layout-column flex-1 min-h-0">
+        <component
+          v-if="activeTab"
+          :is="activeTab.type"
+          :args="activeTab.args"
+          :key="activeTab.id"
+          :ka-scope="activeTab.kaScope"
+          v-model:ka-state="activeTab.kaState" />
+        <div v-else
+          class="flex-1 text-lg flex items-center justify-center empty-state"
+          >The viewer is ready to fulfill your wishes 👾</div>
+      </div>
+      <div class="app-footer">
+        <div>Made by Alexander Drozdov, {{ appVersion.slice(0, 7) }} · <a class="q-link text-white border-b" href="https://github.com/SnosMe/poe-dat-viewer">GitHub</a></div>
+        <a href="https://discord.gg/SJjBdT3" class="flex ml-8"><img src="@/assets/discord-badge.svg" /></a>
+      </div>
+    </div>
+    <download-progress />
+  </template>
 </template>
 
 <script lang="ts">
-import { defineComponent, computed, provide } from 'vue'
+import { defineComponent, computed, provide, shallowRef, onMounted } from 'vue'
 import ViewerTabs from './Tabs.vue'
 import IndexTree from './IndexTree.vue'
 import DownloadProgress from './DownloadProgress.vue'
+import SchemaDiagram from './SchemaDiagram.vue'
+import VueFlowDiagram from './VueFlowDiagram.vue'
 import { tabs, activeTabId } from './workbench-core.js'
 import { BundleLoader } from '@/app/patchcdn/cache.js'
 import { BundleIndex } from '@/app/patchcdn/index-store.js'
@@ -34,7 +44,7 @@ import { DatSchemasDatabase } from '@/app/dat-viewer/db.js'
 
 export default defineComponent({
   name: 'AppWorkbench',
-  components: { IndexTree, ViewerTabs, DownloadProgress },
+  components: { IndexTree, ViewerTabs, DownloadProgress, SchemaDiagram, VueFlowDiagram },
   setup () {
     const loader = new BundleLoader()
     const index = new BundleIndex(loader)
@@ -47,9 +57,34 @@ export default defineComponent({
       tabs.value.find(tab => tab.id === activeTabId.value)
     )
 
+    const standaloneTable = shallowRef<string | null>(null)
+    const standaloneVueFlowTable = shallowRef<string | null>(null)
+    const urlParams = new URLSearchParams(window.location.search)
+    const diagramParam = urlParams.get('diagram')
+    const vueFlowParam = urlParams.get('vueflow')
+
+    if (diagramParam) {
+      standaloneTable.value = diagramParam
+      const savedPatch = localStorage.getItem('POE_PATCH_VER')
+      if (savedPatch) {
+        loader.setPatch(savedPatch)
+      }
+      schemaDb.fetchSchema()
+    } else if (vueFlowParam) {
+      standaloneVueFlowTable.value = vueFlowParam
+      const savedPatch = localStorage.getItem('POE_PATCH_VER')
+      if (savedPatch) {
+        loader.setPatch(savedPatch)
+      }
+      schemaDb.fetchSchema()
+    }
+
     return {
       activeTab,
-      appVersion: import.meta.env.APP_VERSION
+      appVersion: import.meta.env.APP_VERSION,
+      standaloneTable,
+      standaloneVueFlowTable,
+      schemaDb
     }
   }
 })

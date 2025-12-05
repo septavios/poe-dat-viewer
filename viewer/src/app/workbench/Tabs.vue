@@ -40,6 +40,10 @@
         @click="openImport"><i class="codicon codicon-cloud-download"></i> Import</button>
       <button v-if="showDataTables" :class="$style.rightBtn"
         @click="openDataTables"><i class="codicon codicon-table"></i> Data Tables</button>
+      <button v-if="showDataTables" :class="$style.rightBtn"
+        @click="openHotTables"><i class="codicon codicon-flame"></i> Hot Tables</button>
+      <button v-if="showDataTables" :class="$style.rightBtn"
+        @click="openStats"><i class="codicon codicon-graph"></i> Statistics</button>
       <!-- <button :class="$style.rightBtn" title="Help"><i class="codicon codicon-question"></i></button> -->
       <!-- <button :class="$style.rightBtn" title="Settings"><i class="codicon codicon-settings"></i></button> -->
     </div>
@@ -51,8 +55,10 @@ import { defineComponent, computed, inject } from 'vue'
 import { tabs, activeTabId, setActiveTab, closeTab, openTab } from './workbench-core.js'
 import type { BundleIndex } from '@/app/patchcdn/index-store.js'
 import type { DatSchemasDatabase } from '@/app/dat-viewer/db.js'
+import StatsDashboard from './StatsDashboard.vue'
 import ImportDialog from './ImportDialog.vue'
 import DataTablesDialog from './DataTablesDialog.vue'
+import HotTablesDialog from './HotTablesDialog.vue'
 import { useTheme } from '@/theme.js'
 
 export default defineComponent({
@@ -88,6 +94,15 @@ export default defineComponent({
       })
     }
 
+    function openHotTables () {
+      openTab({
+        id: 'poe-dat-viewer@hot-tables',
+        title: 'Hot Tables',
+        type: HotTablesDialog,
+        args: undefined
+      })
+    }
+
     const themeLabel = computed(() => {
       if (preference.value === 'system') {
         return `System (${theme.value === 'dark' ? 'dark' : 'light'})`
@@ -102,12 +117,23 @@ export default defineComponent({
       return preference.value === 'dark' ? 'dark' : 'light'
     })
 
+    function openStats () {
+      openTab({
+        id: 'poe-dat-viewer@stats',
+        title: 'Statistics',
+        type: StatsDashboard,
+        args: undefined
+      })
+    }
+
     return {
       tabs: _tabs,
       setActiveTab,
       closeTab,
       openImport,
       openDataTables,
+      openHotTables,
+      openStats,
       cycleTheme: cyclePreference,
       themeLabel,
       themeTitle,

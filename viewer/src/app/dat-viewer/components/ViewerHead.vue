@@ -5,11 +5,17 @@
         class="datv-header" :class="{ 'datv-col--border': col.border, 'datv-header--active': col.active }"
         :style="{ width: col.widthPx + 'px', transform: `translate(${col.leftPx}px, 0)` }"
         :title="(col.name == null) ? 'unidentified' : (col.name || 'unnamed')"
-        @click="editHeader(col.offset)"
+        @click="editHeader(col.offset, $event)"
         @wheel="handleHeaderWheel(col.offset, $event)">
         <template v-if="col.name === null">&nbsp;</template>
         <span v-else-if="col.name === ''" class="bg-gray-500 text-gray-200 px-1">?</span>
-        <template v-else>{{ col.name }}</template>
+        <template v-else>
+          {{ col.name }}
+          <span v-if="getSortIndex(col.offset) !== -1" class="ml-1 text-xs font-bold">
+            {{ getSortOrder(col.offset) === 1 ? '▲' : '▼' }}
+            <sub v-if="viewer.sortCriteria.value.length > 1">{{ getSortIndex(col.offset) + 1 }}</sub>
+          </span>
+        </template>
       </button>
     </div>
     <div :style="colsRowStyle" class="absolute">
@@ -124,23 +130,56 @@ export default defineComponent({
       toggleColsBetween(viewer.columnSelection.value, selectionStart, offset, viewer.headers.value)
     }
 
-    function editHeader (offset: number) {
+    function editHeader (offset: number, e: MouseEvent) {
       const header = viewer.headers.value.find(h => h.offset === offset)!
-      if (
-        viewer.editHeader.value === header &&
-        (!header.type.byteView || header.type.byteView.array)
-      ) {
-        if (sortOrder.value === 0) {
-          sortOrder.value = 1
-        } else if (sortOrder.value === 1) {
-          sortOrder.value = -1
-        } else if (sortOrder.value === -1) {
-          sortOrder.value = 1
+      
+      // Sorting logic
+      if (!header.type.byteView || header.type.byteView.array) {
+        const existingIdx = viewer.sortCriteria.value.findIndex(c => c.header === header)
+        let newOrder: 1 | -1 = 1
+        
+        if (existingIdx !== -1) {
+          const existing = viewer.sortCriteria.value[existingIdx]
+          if (existing.order === 1) newOrder = -1
+          else newOrder = 1 // Cycle back to asc? Or remove? Let's cycle: asc -> desc -> remove
+          
+          if (existing.order === -1) {
+             // Remove from sort
+             if (e.shiftKey) {
+               viewer.sortCriteria.value = viewer.sortCriteria.value.filter(c => c.header !== header)
+             } else {
+               viewer.sortCriteria.value = []
+             }
+             viewer.rowSorting.value = sortRows(viewer.sortCriteria.value, viewer.datFile)
+             return
+          }
         }
-        viewer.rowSorting.value = sortRows(header, sortOrder.value as 1 | -1, viewer.datFile)
-      } else {
+
+        if (e.shiftKey) {
+          if (existingIdx !== -1) {
+            viewer.sortCriteria.value[existingIdx].order = newOrder
+          } else {
+            viewer.sortCriteria.value = [...viewer.sortCriteria.value, { header, order: newOrder }]
+          }
+        } else {
+          viewer.sortCriteria.value = [{ header, order: newOrder }]
+        }
+        
+        viewer.rowSorting.value = sortRows(viewer.sortCriteria.value, viewer.datFile)
+        triggerRef(viewer.sortCriteria)
+      }
+
+      // Edit header logic (keep existing behavior if needed, or separate?)
+      // Original code toggled sort OR set editHeader.
+      // "if (viewer.editHeader.value === header ...)"
+      // Let's preserve the "edit header" selection logic but separate sorting.
+      // Actually, clicking header usually sorts. Double click or specific action edits?
+      // The original code:
+      // if (viewer.editHeader.value === header && ...) { sort } else { viewer.editHeader.value = header }
+      // So first click selects, second click sorts.
+      
+      if (viewer.editHeader.value !== header) {
         viewer.editHeader.value = header
-        sortOrder.value = 0
       }
     }
 
@@ -162,11 +201,14 @@ export default defineComponent({
         props.left, props.left + props.width))
 
     return {
+      viewer,
       headers,
       selectStart,
       selectContinue,
       editHeader,
       handleHeaderWheel,
+      getSortIndex: (offset: number) => viewer.sortCriteria.value.findIndex(c => c.header.offset === offset),
+      getSortOrder: (offset: number) => viewer.sortCriteria.value.find(c => c.header.offset === offset)?.order,
       headersRowStyle: computed(() =>
         ({ transform: `translate(${-props.left}px, 0)`, lineHeight: rendering.COLUMN_BYTE_HEIGHT + 'px', fontFamily: rendering.FONT_FAMILY, fontSize: rendering.FONT_SIZE + 'px' })),
       colsRowStyle: computed(() =>

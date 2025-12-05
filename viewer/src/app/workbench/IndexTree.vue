@@ -48,7 +48,7 @@
 import { defineComponent, shallowRef, computed, inject } from 'vue'
 import FileSaver from 'file-saver'
 import VirtualScroll, { type VirtualScrollT } from '@/VirtualScroll.vue'
-import { openTab, activeTabId, hasTabId, setActiveTab } from './workbench-core.js'
+import { openTab, activeTabId, hasTabId, setActiveTab, exploreDir } from './workbench-core.js'
 import type { BundleIndex } from '@/app/patchcdn/index-store.js'
 import DatViewer from '../dat-viewer/components/DatViewer.vue'
 
@@ -60,7 +60,7 @@ interface TreeItem {
 }
 
 function useTreeNavigation (index: BundleIndex) {
-  const currentDir = shallowRef('')
+  const currentDir = exploreDir
 
   index.watch(() => {
     currentDir.value = ''

@@ -16,7 +16,24 @@
           v-text="range" />
       </template>
     </div>
-    <div class="flex gap-x-1">
+    <div class="flex gap-x-1 items-center relative">
+      <div class="relative">
+        <button :class="[$style.actionBtn, showColumnsDropdown ? $style.secondary : '']" @click="showColumnsDropdown = !showColumnsDropdown">
+          <i class="codicon codicon-layout"></i> Columns
+        </button>
+        <div v-if="showColumnsDropdown" class="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-50 max-h-96 overflow-y-auto p-2 min-w-[200px]">
+          <div class="flex justify-between items-center mb-2 px-1">
+            <span class="font-semibold text-sm">Visible Columns</span>
+            <button class="text-xs text-blue-600 hover:underline" @click="showAllColumns">Show All</button>
+          </div>
+          <div v-for="header in viewer.headers.value" :key="header.offset" class="flex items-center gap-x-2 px-1 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer" @click="toggleColumn(header.offset)">
+            <input type="checkbox" :checked="!viewer.hiddenColumns.value.has(header.offset)" class="pointer-events-none" />
+            <span class="text-sm truncate max-w-[180px]" :title="header.name || 'unnamed'">{{ header.name || 'unnamed' }}</span>
+          </div>
+        </div>
+      </div>
+      <input v-model.trim="rowQuery" placeholder="Find rows" class="px-1.5 py-1 border bg-white" style="width: 180px;" />
+      <button v-if="rowQuery" :class="[$style.actionBtn, $style.secondary]" @click="clearRowFilter">Clear</button>
       <button v-if="rowSorting"
         :class="[$style.actionBtn, $style.secondary]"
         @click="rowSorting = null"
@@ -33,12 +50,23 @@
         :class="$style.actionBtn"
         @click="exportDataJson"
         ><i class="codicon codicon-database" /> Export data</button>
+      <button
+        :class="$style.actionBtn"
+        @click="openInPoEDB"
+        ><i class="codicon codicon-globe" /> Open in PoEDB</button>
+      <div class="flex items-center gap-x-1">
+        <span class="text-muted">Refs</span>
+        <select :class="$style.actionBtn" v-model="refChoice">
+          <option v-for="n in referenced" :key="n" :value="n">{{ n }}</option>
+        </select>
+        <button :class="$style.actionBtn" @click="refChoice && openReferencedTable(refChoice)">Open</button>
+      </div>
     </div>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, computed, inject, triggerRef } from 'vue'
+import { defineComponent, computed, inject, triggerRef, shallowRef, watch } from 'vue'
 import { clearColumnSelection, getColumnSelections } from '../selection.js'
 import { createHeaderFromSelected } from '../headers.js'
 import FileSaver from 'file-saver'
@@ -46,17 +74,58 @@ import { type Viewer, exportAllRows, saveHeaders, removeHeaders, importHeaders }
 import { openTab } from '../../workbench/workbench-core.js'
 import ShowSchema from './ShowSchema.vue'
 import type { DatSchemasDatabase } from '@/app/dat-viewer/db.js'
+import { getFieldReader } from 'pathofexile-dat/dat.js'
+import { readColumn } from 'pathofexile-dat/dat.js'
+import { poedbUrlForTable, poedbUrlForRow } from '@/app/utils/poedb.js'
+import type { BundleIndex } from '@/app/patchcdn/index-store.js'
 
 export default defineComponent({
   name: 'ViewerActions',
   setup () {
     const viewer = inject<Viewer>('viewer')!
     const db = inject<DatSchemasDatabase>('dat-schemas')!
+    const index = inject<BundleIndex>('bundle-index')!
 
     const selections = computed(() =>
       getColumnSelections(viewer.columnSelection.value)
         .map(range => range.map(col => String(col)).join(' '))
     )
+
+    const rowQuery = shallowRef('')
+    const refChoice = shallowRef('')
+    function clearRowFilter () {
+      rowQuery.value = ''
+    }
+
+    watch(rowQuery, (q) => {
+      const term = q.toLowerCase()
+      if (!term) {
+        viewer.rowSorting.value = null
+        return
+      }
+      const headers = viewer.headers.value
+      const matchers: Array<(idx: number) => boolean> = []
+      const nameHdr = headers.find(h => (h.name || '').toLowerCase() === 'name' && h.type.string)
+      if (nameHdr) {
+        const data = readColumn(nameHdr, viewer.datFile) as string[]
+        matchers.push((i) => String(data[i] || '').toLowerCase().includes(term))
+      }
+      const idHdr = headers.find(h => (h.name || '').toLowerCase() === 'id' && (h.type.integer || h.type.string))
+      if (idHdr) {
+        const data = readColumn(idHdr, viewer.datFile) as Array<number | string>
+        matchers.push((i) => String(data[i] ?? '').toLowerCase().includes(term))
+      }
+      for (const hdr of headers) {
+        if (!hdr.type.string || hdr === nameHdr) continue
+        const data = readColumn(hdr, viewer.datFile) as string[]
+        matchers.push((i) => String(data[i] || '').toLowerCase().includes(term))
+      }
+      const out: number[] = []
+      for (let i = 0; i < viewer.datFile.rowCount; i++) {
+        if (matchers.some(m => m(i))) out.push(i)
+      }
+      viewer.rowSorting.value = out
+    })
 
     function defineColumn () {
       const { editHeader, columnSelection, headers } = viewer
@@ -88,18 +157,68 @@ export default defineComponent({
       })
     }
 
+    function poedbUrlForRowLocal () {
+      const row = viewer.selectedRow.value
+      if (row == null) return poedbUrlForTable(db.patchVersion, viewer.name)
+      const idHeader = viewer.headers.value.find(h => (h.name || '').toLowerCase() === 'id')
+      const nameHeader = viewer.headers.value.find(h => (h.name || '').toLowerCase() === 'name')
+      const readerId = idHeader ? getFieldReader(idHeader, viewer.datFile) : null
+      const readerName = nameHeader ? getFieldReader(nameHeader, viewer.datFile) : null
+      const idVal = readerId ? String(readerId(row)) : ''
+      const nameVal = readerName ? String(readerName(row)) : ''
+      return poedbUrlForRow(db.patchVersion, viewer.name, nameVal || idVal)
+    }
+
+    function openInPoEDB () {
+      const url = poedbUrlForRowLocal()
+      window.open(url, '_blank')
+    }
+
+    async function openReferencedTable (name: string) {
+      const fullPath = viewer.path.replace(`/${viewer.name}.`, `/${name}.`)
+      const fileContent = await index.loadFileContent(fullPath)
+      openTab({ id: `bundles@${fullPath}`, title: name, type: (await import('./DatViewer.vue')).default, args: { fileContent, fullPath } })
+    }
+
     async function restoreSchema () {
       await removeHeaders(viewer, db)
       await importHeaders(viewer, db)
     }
 
+    const showColumnsDropdown = shallowRef(false)
+
+    function toggleColumn (offset: number) {
+      const hidden = viewer.hiddenColumns.value
+      if (hidden.has(offset)) {
+        hidden.delete(offset)
+      } else {
+        hidden.add(offset)
+      }
+      triggerRef(viewer.hiddenColumns)
+    }
+
+    function showAllColumns () {
+      viewer.hiddenColumns.value.clear()
+      triggerRef(viewer.hiddenColumns)
+    }
+
     return {
+      viewer,
+      showColumnsDropdown,
+      toggleColumn,
+      showAllColumns,
       rowSorting: viewer.rowSorting,
       selections,
+      rowQuery,
+      clearRowFilter,
       defineColumn,
       exportDataJson,
       showSchema,
-      restoreSchema
+      restoreSchema,
+      openInPoEDB
+      , openReferencedTable,
+      refChoice,
+      referenced: computed(() => Array.from(viewer.referencedTables.value.keys()).filter(n => n !== viewer.name))
     }
   }
 })

@@ -17,7 +17,11 @@ export interface Viewer {
   columnSelection: Ref<boolean[]>
   editHeader: Ref<Header | null>
   selectedRow: Ref<number | null>
+  hoveredRow: Ref<number | null>
   rowSorting: Ref<number[] | null>
+  sortCriteria: Ref<{ header: Header, order: 1 | -1 }[]>
+  hiddenColumns: Ref<Set<number>>
+  pagination: Ref<{ pageSize: number, currentPage: number, enabled: boolean }>
   scrollPos: { x: number, y: number }
   referencedTables: ComputedRef<Map<string, Ref<ReferencedTable>>>
 }
@@ -82,7 +86,11 @@ export function createViewer (
     columnSelection: shallowRef(new Array(parsed.rowLength).fill(false)),
     editHeader: shallowRef(null),
     selectedRow: shallowRef(null),
+    hoveredRow: shallowRef(null),
     rowSorting: shallowRef(null),
+    sortCriteria: shallowRef([]),
+    hiddenColumns: shallowRef(new Set()),
+    pagination: shallowRef({ pageSize: 100, currentPage: 1, enabled: false }),
     scrollPos: shallowReactive({ x: 0, y: 0 }),
     referencedTables: scope.run(() => computed(() => {
       const out = new Map<string, Ref<ReferencedTable>>()

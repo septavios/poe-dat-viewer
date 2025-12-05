@@ -114,6 +114,13 @@ export default defineComponent({
       const res = await fetch('https://poe-versions.obsoleet.org')
       const version = await res.json()
       latestPoEPatch.value = version
+      if (!poePatch.value) {
+        poePatch.value = version.poe
+        localStorage.setItem('POE_PATCH_VER', poePatch.value)
+        if (!index.isLoaded) {
+          await cdnImport()
+        }
+      }
     }
 
     return {

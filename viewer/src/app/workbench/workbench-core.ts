@@ -69,3 +69,8 @@ export function closeTab (id: string) {
 export function hasTabId (id: string) {
   return tabs.value.some(tab => tab.id === id)
 }
+
+export const exploreDir = shallowRef('')
+export function setExploreDir (dir: string) {
+  exploreDir.value = dir
+}

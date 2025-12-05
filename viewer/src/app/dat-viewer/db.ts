@@ -31,25 +31,26 @@ export interface TableStats {
 export class DatSchemasDatabase {
   private readonly publicSchema = shallowRef<SchemaFile['tables']>([])
   private readonly _isLoading = shallowRef(false)
-  get isLoaded () { return this.publicSchema.value.length > 0 }
-  get isLoading () { return this._isLoading.value }
+  get isLoaded() { return this.publicSchema.value.length > 0 }
+  get isLoading() { return this._isLoading.value }
+  get patchVersion() { return this.index.loader.patchVersion }
 
   private readonly _tableStats = shallowRef<TableStats[]>([])
-  get tableStats () {
+  get tableStats() {
     return this._tableStats.value as readonly TableStats[]
   }
 
-  constructor (
+  constructor(
     private readonly index: BundleIndex
-  ) {}
+  ) { }
 
   private readonly db = openDB<PoeDatViewerSchema>('poe-dat-viewer', 3, {
-    upgrade (db) {
+    upgrade(db) {
       db.createObjectStore('dat-schemas', { keyPath: 'name' })
     }
   })
 
-  async fetchSchema () {
+  async fetchSchema() {
     this._isLoading.value = true
     const response = await fetch('https://poe-bundles.snos.workers.dev/schema.min.json')
     const schema: SchemaFile = await response.json()
@@ -61,7 +62,95 @@ export class DatSchemasDatabase {
     this._isLoading.value = false
   }
 
-  async findSchemaByName (name: string): Promise<DatSchema | undefined> {
+  getDetailedReferencesFrom(name: string): { table: string, column: string }[] {
+    const validFor = this.index.loader.patchVersion.startsWith('4.')
+      ? ValidFor.PoE2
+      : ValidFor.PoE1
+    const target = name.toLowerCase()
+    const tbl = this.publicSchema.value.find(t => (t.validFor & validFor) && t.name.toLowerCase() === target)
+    const res: { table: string, column: string }[] = []
+    if (tbl) {
+      for (const col of tbl.columns) {
+        const ref = col.references?.table
+        if (ref) {
+          res.push({ table: ref, column: col.name || '?' })
+        }
+      }
+    }
+    return res.sort((a, b) => a.table.localeCompare(b.table) || a.column.localeCompare(b.column))
+  }
+
+  getDetailedReferencesTo(name: string): { table: string, column: string }[] {
+    const validFor = this.index.loader.patchVersion.startsWith('4.')
+      ? ValidFor.PoE2
+      : ValidFor.PoE1
+    const target = name.toLowerCase()
+    const res: { table: string, column: string }[] = []
+    for (const tbl of this.publicSchema.value) {
+      if ((tbl.validFor & validFor) === 0) continue
+      for (const col of tbl.columns) {
+        const ref = col.references?.table
+        if (ref && ref.toLowerCase() === target) {
+          res.push({ table: tbl.name, column: col.name || '?' })
+        }
+      }
+    }
+    return res.sort((a, b) => a.table.localeCompare(b.table) || a.column.localeCompare(b.column))
+  }
+
+  referenceCount(name: string): number {
+    const validFor = this.index.loader.patchVersion.startsWith('4.')
+      ? ValidFor.PoE2
+      : ValidFor.PoE1
+    const target = name.toLowerCase()
+    let total = 0
+    for (const tbl of this.publicSchema.value) {
+      if ((tbl.validFor & validFor) === 0) continue
+      for (const col of tbl.columns) {
+        const ref = col.references?.table
+        if (ref && ref.toLowerCase() === target) {
+          total += 1
+        }
+      }
+    }
+    return total
+  }
+
+  getReferencesTo(name: string): string[] {
+    const validFor = this.index.loader.patchVersion.startsWith('4.')
+      ? ValidFor.PoE2
+      : ValidFor.PoE1
+    const target = name.toLowerCase()
+    const res = new Set<string>()
+    for (const tbl of this.publicSchema.value) {
+      if ((tbl.validFor & validFor) === 0) continue
+      for (const col of tbl.columns) {
+        const ref = col.references?.table
+        if (ref && ref.toLowerCase() === target) {
+          res.add(tbl.name)
+        }
+      }
+    }
+    return Array.from(res).sort()
+  }
+
+  getReferencesFrom(name: string): string[] {
+    const validFor = this.index.loader.patchVersion.startsWith('4.')
+      ? ValidFor.PoE2
+      : ValidFor.PoE1
+    const target = name.toLowerCase()
+    const tbl = this.publicSchema.value.find(t => (t.validFor & validFor) && t.name.toLowerCase() === target)
+    const res = new Set<string>()
+    if (tbl) {
+      for (const col of tbl.columns) {
+        const ref = col.references?.table
+        if (ref) res.add(ref)
+      }
+    }
+    return Array.from(res).sort()
+  }
+
+  async findSchemaByName(name: string): Promise<DatSchema | undefined> {
     const localSchema = await (await this.db).get('dat-schemas', name)
     if (localSchema != null) {
       return localSchema
@@ -77,12 +166,12 @@ export class DatSchemasDatabase {
     return sch && fromPublicSchema(sch)
   }
 
-  async findByName (name: string): Promise<ViewerSerializedHeader[]> {
+  async findByName(name: string): Promise<ViewerSerializedHeader[]> {
     const schema = await this.findSchemaByName(name)
     return schema?.headers ?? []
   }
 
-  async saveHeaders (
+  async saveHeaders(
     name: string,
     headers: Header[]
   ) {
@@ -92,11 +181,11 @@ export class DatSchemasDatabase {
     })
   }
 
-  async removeHeaders (name: string) {
+  async removeHeaders(name: string) {
     await (await this.db).delete('dat-schemas', name)
   }
 
-  async preloadDataTables (totalTables: Ref<number>) {
+  async preloadDataTables(totalTables: Ref<number>) {
     const filePaths = this.index.getDirContent('data')
       .files
       .filter(file => file.endsWith('.datc64')) // this also removes special `Languages.dat`
@@ -148,7 +237,7 @@ export class DatSchemasDatabase {
   }
 }
 
-function serializeHeaders (headers: Header[]) {
+function serializeHeaders(headers: Header[]) {
   return headers.map<ViewerSerializedHeader>(header => ({
     ...header,
     length: (
@@ -163,41 +252,41 @@ function serializeHeaders (headers: Header[]) {
   }))
 }
 
-function fromPublicSchema (sch: SchemaTable): DatSchema {
+function fromPublicSchema(sch: SchemaTable): DatSchema {
   const headers = sch.columns.flatMap<ViewerSerializedHeader>(column => {
     const type: ViewerSerializedHeader['type'] = {
       array: column.array,
       byteView:
         column.type === 'array' ? { array: true }
-        : undefined,
+          : undefined,
       integer:
         // column.type === 'u8' ? { unsigned: true, size: 1 }
         column.type === 'u16' ? { unsigned: true, size: 2 }
-        : column.type === 'u32' ? { unsigned: true, size: 4 }
-        // : column.type === 'u64' ? { unsigned: true, size: 8 }
-        // : column.type === 'i8' ? { unsigned: false, size: 1 }
-        : column.type === 'i16' ? { unsigned: false, size: 2 }
-        : column.type === 'i32' ? { unsigned: false, size: 4 }
-        // : column.type === 'i64' ? { unsigned: false, size: 8 }
-        : column.type === 'enumrow' ? { unsigned: false, size: 4 }
-        : undefined,
+          : column.type === 'u32' ? { unsigned: true, size: 4 }
+            // : column.type === 'u64' ? { unsigned: true, size: 8 }
+            // : column.type === 'i8' ? { unsigned: false, size: 1 }
+            : column.type === 'i16' ? { unsigned: false, size: 2 }
+              : column.type === 'i32' ? { unsigned: false, size: 4 }
+                // : column.type === 'i64' ? { unsigned: false, size: 8 }
+                : column.type === 'enumrow' ? { unsigned: false, size: 4 }
+                  : undefined,
       decimal:
         column.type === 'f32' ? { size: 4 }
-        // : column.type === 'f64' ? { size: 8 }
-        : undefined,
+          // : column.type === 'f64' ? { size: 8 }
+          : undefined,
       string:
         column.type === 'string' ? {}
-        : undefined,
+          : undefined,
       boolean:
         column.type === 'bool' ? {}
-        : undefined,
+          : undefined,
       key:
         (column.type === 'row' || column.type === 'foreignrow') ? {
           foreign: (column.type === 'foreignrow'),
           table: column.references?.table ?? null,
           viewColumn: null
         }
-        : undefined
+          : undefined
     }
     if (column.interval) {
       return [{

@@ -114,7 +114,7 @@ export class BundleLoader {
         state.isDownloading = false
       }
 
-      await cache.put(path, new Response(buf, {
+      await cache.put(path, new Response(buf.slice(0), {
         headers: {
           'content-length': String(buf.byteLength),
           'content-type': 'application/octet-stream'

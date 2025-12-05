@@ -128,7 +128,7 @@ function useTreeNavigation (index: BundleIndex) {
         })
       } else {
         FileSaver.saveAs(new File(
-          [fileContent],
+          [fileContent.slice(0)],
           item.fullPath.substring(item.fullPath.lastIndexOf('/') + 1),
           { type: 'application/octet-stream' }
         ))
